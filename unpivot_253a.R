@@ -5,6 +5,7 @@ library(tidyxl)
 library(readxl)
 library(unpivotr)
 library(rio)
+library(lubridate)
 
 ## This script seeks to convert MHCLG's table 253a into tidy data
 # The table shows quarterly housebuilding by LA and is on multiple sheets
@@ -14,23 +15,25 @@ destfile <- "LiveTable_253a.xlsx"
 curl::curl_download(url,destfile)
 data <- xlsx_cells(path = "LiveTable_253a.xlsx")
 
-# Filter to relevant cells and descriptor columns
-dataf <- data %>% filter(col >3 & row > 2) %>% 
-  select(1,3:6,9,11,21) 
+# Through trial and error I found that this dataset needed some work before tidying
+data$character[data$sheet > "2010 Q3" & data$row == 3 & data$col == 8] <- "Dwellings started"
+data$data_type[data$sheet > "2010 Q3" & data$row == 3 & data$col == 8] <- "character"
 
-# Through trying various approaches it seems that we need to limit ourselves to 
-# only the relevant rows, so let's get the list of rows where 
-# columns 8 to 10 are blank (i.e. no headings or data).
-# This filter was chosen by trial and error, made more difficult by the fact that
-# the table layout shifts subtly at various points
-blanks <- dataf %>% 
-  select(sheet, row, col, is_blank) %>%
-  filter(col > 7 & col <11) %>%
-  spread(col, is_blank) %>%
-  filter_at(vars(`8`,`9`,`10`), all_vars(. == TRUE))
+# The structure of the data changes subtly in 2014, and I found the only way to deal with this
+# was to split it and apply separate filters
+data_pre2014Q2 <- data %>% 
+  filter(col >3 & row > 2) %>% 
+  filter(data_type != "blank") %>% 
+  filter(sheet < "2014 Q2") %>%
+  select(1,3:4,6,9,11,21)
 
-# now use that list to filter out these rows with an `anti-join`
-dataf <- anti_join(dataf, blanks, by = c("sheet", "row"))
+data_post2014Q2 <- data %>% 
+  filter(col >3 & row > 3) %>% 
+  filter(data_type != "blank") %>% 
+  filter(sheet > "2014 Q1") %>%
+  select(1,3:4,6,9,11,21)
+
+dataf <- rbind(data_pre2014Q2, data_post2014Q2)
 
 # Describe the beheading function 
 unpivot <- function(cells){
@@ -41,7 +44,6 @@ unpivot <- function(cells){
 }
 
 # Apply that to each sheet.
-# Note, I found that this step fails if you don't strip out blank rows as above
 updata.sheet <- dataf %>%
   nest(-sheet) %>%
   mutate(data = map(data, unpivot)) %>%
@@ -67,26 +69,27 @@ final <- final %>%
          Region.name = `Region name`,
          Number = numeric) 
 
-# Looking at the data, there's a problem: missing type for completed private units from 2010 Q4 on
-# I'm completely sure there's a better way of dealing with this upfront, but for now
-# I'll just do a manual post-hoc correction. This wouldn't work in more complex or random cases however.
-final <- final %>% 
-  replace_na(list(Type = "Dwellings completed"))
+# Turn the quarter variable into the date of the end of each quarter
+# This helps with ggplotting 
+final$Date <- parse_date_time(final$Quarter, orders = "Yq") %>%
+  ceiling_date("quarter", change_on_boundary = T) - days(1)
 
-# Now we just need to tidy up some textual irregularities
-final$Provider <- gsub("[\r\n]", " ", final$Provider)
-final$Type <- trimws(final$Type)
+# Tidy up some of the text values
+final$Provider <- gsub("\r?\n|\r", " ", final$Provider)
+final$Type <- trimws(final$Type, "both") # this fails to remove the trailing space, strangely
+final$Type <- str_trim(final$Type) # this works
 
-# Let's look at the London trend
-London <- final %>%
-  filter(Region.name == "London" &
-           Provider == "All") %>%
-  group_by(Region.name, Type, Quarter) %>%
-  tally(Number)
+# Let's try plotting an annualised total
+final %>%
+  group_by(Region.name) %>%
+  filter(Type == "Dwellings started" & Provider == "Housing Associations") %>%
+  filter(!is.na(Region.name)) %>%
+  group_by(Region.name, Date) %>%
+  summarise(Total = sum(Number)) %>% # calculate regional sums
+  mutate(annual_total = zoo::rollapplyr(Total, width=4, FUN=sum, partial=TRUE)) %>% # annualised totals
+  slice(4:n()) %>% # skip the first three rows when plotting annualised data
+  ggplot(aes(x = Date, y = annual_total, colour = Region.name, group = Region.name)) +
+  geom_line() +
+  facet_wrap(~Region.name) +
+  guides(colour = FALSE) # drop legend
 
-# Hmm, for some reason it stops after 2014 Q1, and I can't work out why.
-# Presumably something to do with MHCLG cunningly changing the table layouts every couple of years ...
-
-# Another approach would be to strip out the numeric data, then manually identify the
-# cells containing the headers, then `enhead` the data. But I couldn't work out how to 
-# do this with multiple cells.
