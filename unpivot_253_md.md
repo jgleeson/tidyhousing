@@ -1,7 +1,7 @@
 tidyhousing: MHCLG table 253 (annual housebuilding)
 ================
 James Gleeson
-22 May 2019
+May 2019
 
 #### Introduction
 
@@ -9,7 +9,7 @@ This notebook shows how to use R code to turn a (very) messy official statistics
 
 The code here uses Duncan Garmonsway's brilliant [tidyxl](https://github.com/nacnudus/tidyxl) and [unpivotr](https://nacnudus.github.io/unpivotr/) packages, as well as many of the tips in his [guide to tidying complex spreadsheets](https://nacnudus.github.io/spreadsheet-munging-strategies/). If you're not familiar with these approaches Duncan's [guide](https://nacnudus.github.io/unpivotr/) to using `unpivotr` is a good introduction.
 
-The table we'll be tidying is MHCLG's [live table 253](https://www.gov.uk/government/statistical-data-sets/live-tables-on-house-building), which shows 'permanent dwellings started and completed, by tenure and district' in England by financial year back to 1980/81. This data is valuable for historical purposes (even if it less accurate in recent years as discussed by [Neal Hudson](http://resi-analysts.com/wp-content/uploads/2019/01/Counting-Houses-Rightmove-2018.11.20.pdf)), but it's quite difficult to construct any trends from the published spreadsheet as each year's data is on a different sheet.
+The table we'll be tidying is MHCLG's [live table 253](https://www.gov.uk/government/statistical-data-sets/live-tables-on-house-building), which shows 'permanent dwellings started and completed, by tenure and district' in England by financial year back to 1980/81. This data is valuable for historical purposes (even if it less accurate in recent years, as discussed by [Neal Hudson](http://resi-analysts.com/wp-content/uploads/2019/01/Counting-Houses-Rightmove-2018.11.20.pdf)), but it's quite difficult to construct any trends from the published spreadsheet as each year's data is on a different sheet.
 
 As it turns out, this is a doozy of a messy spreadsheet, due to a combination of hidden columns, variables that appear and disappear from year to year, header cells that merge and unmerge, numbers formatted as characters and lots of missing data. So tidying it requires a fairly complex procedure, which took quite a while to develop. No doubt this procedure could also be improved - comments and suggestions are welcomed!
 
@@ -77,8 +77,8 @@ data.third <- data %>%
 Now we create a function to tidy each sheet in each chunk of data. Each function includes a number of steps:
 
 -   [Justifying](https://nacnudus.github.io/spreadsheet-munging-strategies/pivot-complex.html#centre-aligned-headers) the column headers where they have been unmerged so that they can be matched to the relevant numeric cells
--   Using `enhead` to ensure these justified headings are recognised as such
--   Using `behead` to identify headings that are already in the right positions in the spreadsheet.
+-   Using [enhead](https://nacnudus.github.io/unpivotr/reference/enhead.html) to ensure these justified headings are recognised as such
+-   Using [behead](https://nacnudus.github.io/unpivotr/reference/behead.html) to identify headings that are already in the right positions in the spreadsheet.
 
 First chunk first:
 
